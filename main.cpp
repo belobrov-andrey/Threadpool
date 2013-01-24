@@ -8,7 +8,7 @@
 #include "Threadpool.hpp"
 
 int main() {
-    ThreadPool pool(4);
+    Threadpool pool(4);
 
     typedef std::vector<std::future<int>> rvec_t;
     rvec_t results;

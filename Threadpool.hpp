@@ -1,5 +1,5 @@
-#ifndef THREAD_POOL_H
-#define THREAD_POOL_H
+#ifndef THREAD_POOL_HPP
+#define THREAD_POOL_HPP
 
 #include <vector>
 #include <deque>
@@ -39,30 +39,32 @@ class any_packaged_task {
     std::shared_ptr<any_packaged_base> ptr;
 };
 
-class ThreadPool;
+class Threadpool;
 
 // our worker thread objects
 class Worker {
   public:
-    Worker(ThreadPool& s) : pool(s) { }
+    Worker(Threadpool& s) : pool(s) { }
 
     void operator()();
 
   private:
-    ThreadPool& pool;
+    Threadpool& pool;
 };
 
 // the actual thread pool
-class ThreadPool {
+class Threadpool {
   public:
-    ThreadPool() : ThreadPool(std::max(1u, std::thread::hardware_concurrency())) { }
+    typedef std::vector<std::thread>::size_type size_type;
 
-    ThreadPool(size_t);
+    Threadpool() : Threadpool(std::max(1u, std::thread::hardware_concurrency())) { }
+
+    Threadpool(size_type);
 
     template<class T, class F>
     std::future<T> enqueue(F f);
 
-    ~ThreadPool();
+    ~Threadpool();
 
   private:
     friend class Worker;
@@ -98,14 +100,14 @@ void Worker::operator()() {
 }
 
 // the constructor just launches some amount of workers
-ThreadPool::ThreadPool(size_t threads) : stop(false) {
-  for(size_t i = 0;i<threads;++i)
+Threadpool::Threadpool(Threadpool::size_type threads) : stop(false) {
+  for(Threadpool::size_type i = 0; i < threads; ++i)
     workers.emplace_back(Worker(*this));
 }
 
 // add new work item to the pool
 template<class T, class F>
-std::future<T> ThreadPool::enqueue(F f) {
+std::future<T> Threadpool::enqueue(F f) {
   std::packaged_task<T()> task(f);
   std::future<T> res = task.get_future();
 
@@ -120,12 +122,12 @@ std::future<T> ThreadPool::enqueue(F f) {
 }
 
 // the destructor joins all threads
-ThreadPool::~ThreadPool() {
+Threadpool::~Threadpool() {
   stop = true;
 
   condition.notify_all();
 
-  for(size_t i = 0;i<workers.size();++i)
+  for(Threadpool::size_type i = 0; i < workers.size(); ++i)
     workers[i].join();
 }
 

@@ -2,30 +2,36 @@
 #define _GLIBCXX_USE_NANOSLEEP
 
 #include <iostream>
-#include <vector>
 #include <chrono>
+#include <future>
+#include <vector>
+#include <functional>
 
 #include "Threadpool.hpp"
 
+
 int main() {
-    Threadpool pool(4);
+  // feel free to raise the number of threads;
+  // or use the default constructor for automatic detection
+  Threadpool pool(1);
 
-    typedef std::vector<std::future<int>> rvec_t;
-    rvec_t results;
+  // dummy task
+  auto task = [](int priority) {
+    std::cout << "processing task with priority " << priority << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
-    for(auto i = 0; i < 8; ++i) {
-        results.push_back(
-            pool.enqueue<int>([i] {
-                std::cout << "hello " << i << std::endl;
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                std::cout << "world " << i << std::endl;
+    return priority * priority;
+  };
 
-                return i * i;
-            })
-        );
-    }
+  const int num_tasks = 8;
 
-    for(rvec_t::size_type i = 0; i < results.size(); ++i)
-        std::cout << results[i].get() << ' ';
-    std::cout << std::endl;
+  std::vector<std::future<int>> results;
+
+  // priority is cycled every 4 tasks, in order to see the prioritizing effect
+  for(auto i = 0; i < num_tasks; ++i)
+    results.emplace_back(pool.enqueue<int>(std::bind(task, i % 4), i % 4));
+
+  // we need the results here
+  for(auto i = 0; i < num_tasks; ++i)
+    std::cout << "result of task " << i << " is " << results[i].get() << std::endl;
 }

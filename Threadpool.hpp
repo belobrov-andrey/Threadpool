@@ -2,13 +2,14 @@
 #define THREAD_POOL_HPP
 
 #include <vector>
-#include <deque>
+#include <queue>
 #include <memory>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <future>
 #include <algorithm>
+#include <utility>
 
 // need this type to "erase" the return type of the packaged task
 struct any_packaged_base {
@@ -58,13 +59,11 @@ class Threadpool {
     typedef std::vector<std::thread>::size_type size_type;
 
     Threadpool() : Threadpool(std::max(1u, std::thread::hardware_concurrency())) { }
-
     Threadpool(size_type);
+    ~Threadpool();
 
     template<class T, class F>
-    std::future<T> enqueue(F f);
-
-    ~Threadpool();
+    std::future<T> enqueue(F f, int);
 
   private:
     friend class Worker;
@@ -72,8 +71,17 @@ class Threadpool {
     // need to keep track of threads so we can join them
     std::vector<std::thread> workers;
 
-    // the task queue
-    std::deque<any_packaged_task> tasks;
+    typedef std::pair<int, any_packaged_task> priority_task;
+
+    // emulate 'nice'
+    struct task_comp {
+      bool operator()(const priority_task& lhs, const priority_task& rhs) const {
+        return lhs.first > rhs.first;
+      }
+    };
+
+    // the prioritized task queue
+    std::priority_queue<priority_task, std::vector<priority_task>, task_comp> tasks;
 
     // synchronization
     std::mutex queue_mutex;
@@ -91,8 +99,9 @@ void Worker::operator()() {
     if(pool.stop)
       return;
 
-    any_packaged_task task(pool.tasks.front());
-    pool.tasks.pop_front();
+    any_packaged_task task(pool.tasks.top().second);
+    pool.tasks.pop();
+
     lock.unlock();
 
     task();
@@ -101,19 +110,21 @@ void Worker::operator()() {
 
 // the constructor just launches some amount of workers
 Threadpool::Threadpool(Threadpool::size_type threads) : stop(false) {
+  workers.reserve(threads);
+
   for(Threadpool::size_type i = 0; i < threads; ++i)
     workers.emplace_back(Worker(*this));
 }
 
 // add new work item to the pool
 template<class T, class F>
-std::future<T> Threadpool::enqueue(F f) {
+std::future<T> Threadpool::enqueue(F f, int priority = 0) {
   std::packaged_task<T()> task(f);
   std::future<T> res = task.get_future();
 
   {
     std::unique_lock<std::mutex> lock(queue_mutex);
-    tasks.emplace_back(std::move(task));
+    tasks.emplace(std::make_pair(priority, std::move(task)));
   }
 
   condition.notify_one();

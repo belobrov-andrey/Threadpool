@@ -34,8 +34,8 @@ class Threadpool {
     Threadpool(size_type);
     ~Threadpool();
 
-    template<class T, class F>
-    std::future<T> enqueue(F f, int priority = 0);
+    template<class F>
+    auto enqueue(F&& f, int priority = 0) -> std::future<decltype(f())>;
 
   private:
     friend class Worker;
@@ -89,13 +89,15 @@ Threadpool::Threadpool(Threadpool::size_type threads) : stop(false) {
 }
 
 // add new work item to the pool
-template<class T, class F>
-std::future<T> Threadpool::enqueue(F f, int priority) {
+template<class F>
+auto Threadpool::enqueue(F&& f, int priority) -> std::future<decltype(f())> {
+  typedef decltype(f()) R;
+
   if(stop)
     throw std::runtime_error("enqueue on stopped threadpool");
 
-  auto task = std::make_shared<std::packaged_task<T()>>(f);
-  std::future<T> res = task->get_future();
+  auto task = std::make_shared<std::packaged_task<R()>>(std::forward<F>(f));
+  std::future<R> res = task->get_future();
 
   {
     std::unique_lock<std::mutex> lock(queue_mutex);

@@ -29,7 +29,7 @@ int main() {
 
   // priority is cycled every 4 tasks, in order to see the prioritizing effect
   for(auto i = 0; i < num_tasks; ++i)
-    results.emplace_back(pool.enqueue<int>(std::bind(task, i % 4), i % 4));
+    results.emplace_back(pool.enqueue(std::bind(task, i % 4), i % 4));
 
   // we need the results here
   for(auto i = 0; i < num_tasks; ++i)

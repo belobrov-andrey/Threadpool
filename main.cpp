@@ -16,9 +16,9 @@ int main() {
   Threadpool pool(1);
 
   // dummy task
-  auto task = [](int priority) {
-    std::cout << "processing task with priority " << priority << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+  auto task = [](int priority) -> int {
+    std::cout << "processing task with priority " << priority << " in thread with id " << std::this_thread::get_id() <<std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 
     return priority * priority;
   };

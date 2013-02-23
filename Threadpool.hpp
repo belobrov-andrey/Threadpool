@@ -10,39 +10,12 @@
 #include <future>
 #include <algorithm>
 #include <utility>
+#include <functional>
+#include <stdexcept>
 
-// need this type to "erase" the return type of the packaged task
-struct any_packaged_base {
-  virtual void execute() = 0;
-};
-
-template<class R>
-struct any_packaged : public any_packaged_base {
-  any_packaged(std::packaged_task<R()>&& t) : task(std::move(t)) { }
-
-  void execute() {
-    task();
-  }
-
-  std::packaged_task<R()> task;
-};
-
-class any_packaged_task {
-  public:
-    template<class R>
-    any_packaged_task(std::packaged_task<R()>&& task) : ptr(new any_packaged<R>(std::move(task))) { }
-
-    void operator()() {
-      ptr->execute();
-    }
-
-  private:
-    std::shared_ptr<any_packaged_base> ptr;
-};
 
 class Threadpool;
 
-// our worker thread objects
 class Worker {
   public:
     Worker(Threadpool& s) : pool(s) { }
@@ -53,7 +26,6 @@ class Worker {
     Threadpool& pool;
 };
 
-// the actual thread pool
 class Threadpool {
   public:
     typedef std::vector<std::thread>::size_type size_type;
@@ -63,7 +35,7 @@ class Threadpool {
     ~Threadpool();
 
     template<class T, class F>
-    std::future<T> enqueue(F f, int);
+    std::future<T> enqueue(F f, int priority = 0);
 
   private:
     friend class Worker;
@@ -71,7 +43,7 @@ class Threadpool {
     // need to keep track of threads so we can join them
     std::vector<std::thread> workers;
 
-    typedef std::pair<int, any_packaged_task> priority_task;
+    typedef std::pair<int, std::function<void()>> priority_task;
 
     // emulate 'nice'
     struct task_comp {
@@ -96,10 +68,10 @@ void Worker::operator()() {
     while(!pool.stop && pool.tasks.empty())
       pool.condition.wait(lock);
 
-    if(pool.stop)
+    if(pool.stop && pool.tasks.empty())
       return;
 
-    any_packaged_task task(pool.tasks.top().second);
+    std::function<void()> task(pool.tasks.top().second);
     pool.tasks.pop();
 
     lock.unlock();
@@ -118,13 +90,16 @@ Threadpool::Threadpool(Threadpool::size_type threads) : stop(false) {
 
 // add new work item to the pool
 template<class T, class F>
-std::future<T> Threadpool::enqueue(F f, int priority = 0) {
-  std::packaged_task<T()> task(f);
-  std::future<T> res = task.get_future();
+std::future<T> Threadpool::enqueue(F f, int priority) {
+  if(stop)
+    throw std::runtime_error("enqueue on stopped threadpool");
+
+  auto task = std::make_shared<std::packaged_task<T()>>(f);
+  std::future<T> res = task->get_future();
 
   {
     std::unique_lock<std::mutex> lock(queue_mutex);
-    tasks.emplace(std::make_pair(priority, std::move(task)));
+    tasks.emplace(priority, [task]{ (*task)(); });
   }
 
   condition.notify_one();

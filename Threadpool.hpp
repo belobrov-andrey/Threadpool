@@ -35,7 +35,7 @@ class Threadpool {
     ~Threadpool();
 
     template<class F>
-    auto enqueue(F&& f, int priority = 0) -> std::future<decltype(f())>;
+    auto enqueue(F&& f, int priority = 0) -> std::future<decltype(std::forward<F>(f)())>;
 
   private:
     friend class Worker;
@@ -90,8 +90,8 @@ Threadpool::Threadpool(Threadpool::size_type threads) : stop(false) {
 
 // add new work item to the pool
 template<class F>
-auto Threadpool::enqueue(F&& f, int priority) -> std::future<decltype(f())> {
-  typedef decltype(f()) R;
+auto Threadpool::enqueue(F&& f, int priority) -> std::future<decltype(std::forward<F>(f)())> {
+  typedef decltype(std::forward<F>(f)()) R;
 
   if(stop)
     throw std::runtime_error("enqueue on stopped threadpool");
